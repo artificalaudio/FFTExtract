@@ -80,6 +80,7 @@ void FFTExtractAudioProcessor::pushSampleToFifo (float sample) noexcept
         {
             std::fill(fftData.begin(), fftData.end(), 0.0f);
             std::copy(fifo.begin(), fifo.end(), fftData.begin());
+            nextFFTBlockReady = true;
         }
         fifoInd = 0;
     }
@@ -149,21 +150,9 @@ void FFTExtractAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
     for (int channel = 0; channel < 1; ++channel)
     {
         auto* channelData = buffer.getWritePointer (channel);
@@ -174,9 +163,29 @@ void FFTExtractAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     
     if(nextFFTBlockReady)
     {
-        fwdFFT.perform(<#const Complex<float> *input#>, <#Complex<float> *output#>, <#bool inverse#>)
+        fwdFFT.performRealOnlyForwardTransform(fftData.data());
+        fwdFFT.performRealOnlyInverseTransform(fftData.data());
+        nextFFTBlockReady = false;
+        //DBG("Done");
+        
     }
+    
+    for (int channel = 0; channel < 1; ++channel)
+    {
+        auto* channelData = buffer.getWritePointer (channel);
+        for (auto i = 0; i < buffer.getNumSamples(); ++i)
+        {
+            channelData[i] = fftData[i];
+        }
+        // ..do something to the data...
+    }
+    
+    // then presumably use the data from fftData.data() in the audio block?
+    // What's the step here to it get back to the output?
 }
+
+
+//  fwdFFT.perform(<#const Complex<float> *input#>, <#Complex<float> *output#>, <#bool inverse#>)
 
 //==============================================================================
 bool FFTExtractAudioProcessor::hasEditor() const
