@@ -19,7 +19,7 @@ FFTExtractAudioProcessor::FFTExtractAudioProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       ), fwdFFT(fftOrder)
+                       ), fwdFFT1(fftOrder),fwdFFT2(fftOrder),invFFT(fftOrder)
 #endif
 {
 }
@@ -78,8 +78,10 @@ void FFTExtractAudioProcessor::pushSampleToFifo (float sample) noexcept
     {
         if(!nextFFTBlockReady)
         {
-            std::fill(fftData.begin(), fftData.end(), 0.0f);
-            std::copy(fifo.begin(), fifo.end(), fftData.begin());
+            std::fill(fftData1.begin(), fftData1.end(), 0.0f);
+            std::fill(fftData2.begin(), fftData2.end(), 0.0f);
+            std::copy(fifo.begin(), fifo.end(), fftData1.begin());
+            std::copy(fifo.begin(), fifo.end(), fftData2.begin());
             nextFFTBlockReady = true;
         }
         fifoInd = 0;
@@ -108,6 +110,8 @@ void FFTExtractAudioProcessor::changeProgramName (int index, const juce::String&
 //==============================================================================
 void FFTExtractAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    inputdata.reserve((fftSize));
+    outputdata.reserve((fftSize));
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
 }
@@ -153,7 +157,7 @@ void FFTExtractAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    for (int channel = 0; channel < 1; ++channel)
+    for (int channel = 0; channel < 2; ++channel)
     {
         auto* channelData = buffer.getWritePointer (channel);
         for (auto i = 0; i < buffer.getNumSamples(); ++i)
@@ -163,19 +167,45 @@ void FFTExtractAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     
     if(nextFFTBlockReady)
     {
-        fwdFFT.performRealOnlyForwardTransform(fftData.data());
-        fwdFFT.performRealOnlyInverseTransform(fftData.data());
+//        fwdFFT.performRealOnlyForwardTransform(fftData.data());
+//
+//        fwdFFT.performRealOnlyInverseTransform(fftData.data());
+        
+        fwdFFT1.performRealOnlyForwardTransform(fftData1.data());
+        fwdFFT2.performRealOnlyForwardTransform(fftData2.data());
+        // Get mag and phase
+        struct FreqData1 { float mag, phase; };
+        struct FreqData2 { float mag, phase; };
+        //struct OutData { float mag, phase; };
+        auto freq1data = (FreqData1*)fftData1.data();
+        auto freq2data = (FreqData2*)fftData2.data();
+        
+        // A) What are the side channel inputs? this would be better to do with the FFT2 data
+        
+        // Do Polar 2 Cartesian >>>
+        // int interpolator = 0.2;
+        // auto newmag = (freq1data->mag   * (1.0f-interpolator)) * (freq2data->mag   * interpolator),
+        // auto newphs = (freq1data->phase * (1.0f-interpolator)) + (freq2data->phase * interpolator),
+        // auto newfreqdata = polar2cart(newmag,newphs)
+        // takes two inputs and returns a complex output
+
+        invFFT.performRealOnlyInverseTransform(fftData1.data());
+        // instead of outputing fftData1 , it would be the algo above.
+        
         nextFFTBlockReady = false;
         //DBG("Done");
         
     }
     
-    for (int channel = 0; channel < 1; ++channel)
+    for (int channel = 0; channel < 2; ++channel)
     {
         auto* channelData = buffer.getWritePointer (channel);
         for (auto i = 0; i < buffer.getNumSamples(); ++i)
         {
-            channelData[i] = fftData[i];
+           // channelData[i] = buffer.getSample(channel, i) * 0.0;
+            channelData[i] = fftData1[i];
+            
+            // would output the summed data here instead of fft1 data
         }
         // ..do something to the data...
     }
@@ -183,9 +213,6 @@ void FFTExtractAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     // then presumably use the data from fftData.data() in the audio block?
     // What's the step here to it get back to the output?
 }
-
-
-//  fwdFFT.perform(<#const Complex<float> *input#>, <#Complex<float> *output#>, <#bool inverse#>)
 
 //==============================================================================
 bool FFTExtractAudioProcessor::hasEditor() const
