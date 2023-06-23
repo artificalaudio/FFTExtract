@@ -9,15 +9,20 @@
 #pragma once
 
 #include <JuceHeader.h>
-
+#include <complex>
 //==============================================================================
 /**
 */
+using namespace std::literals;
+
 class FFTExtractAudioProcessor  : public juce::AudioProcessor
                             #if JucePlugin_Enable_ARA
                              , public juce::AudioProcessorARAExtension
                             #endif
 {
+    using ChannelSet = juce::AudioChannelSet;
+    using AppProps = juce::ApplicationProperties;
+    
 public:
     //==============================================================================
     FFTExtractAudioProcessor();
@@ -35,6 +40,9 @@ public:
 
     //==============================================================================
     juce::AudioProcessorEditor* createEditor() override;
+    
+    juce::AudioProcessor::BusesProperties makeBusesProperties();
+    
     bool hasEditor() const override;
 
     //==============================================================================
@@ -56,38 +64,31 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
     
-    //==============================================================================
-    void pushSampleToFifo (float sample) noexcept;
+    std::complex<float> polar2cart(float r, float theta);
     
+    //==============================================================================
+    void pushSampleToFifo (float sample, int channel) noexcept;
+    void pushSCSampleToFifo (float sample) noexcept;
     static constexpr auto fftOrder = 8;
     static constexpr auto fftSize = 1 << fftOrder;
-    
     juce::dsp::FFT fwdFFT1;
     juce::dsp::FFT fwdFFT2;
     juce::dsp::FFT invFFT;
     
-    
-//    fft.performRealOnlyForwardTransform(data);
-//    struct FreqData { float mag, phase; };
-//    auto freqdata = (FreqData*)data;
-//    inv.performRealOnlyInverseTransform(data);
-    
     std::array<float, fftSize> fifo;
+    std::array<float, fftSize> scfifo;
     std::array<float, fftSize * 2> fftData1;
     std::array<float, fftSize * 2> fftData2;
     
-    //const Complex<float> *input
+    std::vector<std::complex<float>> inputdata {fftSize};
+    std::vector<std::complex<float>> scdata {fftSize};
     
-    std::vector<std::complex<float>> inputdata;
-//    
-    std::vector<std::complex<float>> outputdata;
-    
-//    std::array<Complex, fftSize * 2> complexFFTInput;
-//
-//    std::array<Complex<float>, fftSize * 2> complexFFTOutput;
+    std::vector<std::complex<float>> outputdata {fftSize};
     
     int fifoInd = 0;
-    std::atomic<bool> nextFFTBlockReady;
+    int scfifoInd = 0;
+    bool nextFFT1BlockReady = false;
+    bool nextFFT2BlockReady = false;
     
     //==============================================================================
 private:
